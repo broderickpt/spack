@@ -1,4 +1,4 @@
-# Copyright 2013-2023 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
@@ -12,11 +12,15 @@ class PyPoetry(PythonPackage):
     homepage = "https://python-poetry.org/"
     pypi = "poetry/poetry-1.1.12.tar.gz"
 
+    license("MIT")
+
     version("1.6.1", sha256="0ab9b1a592731cc8b252b8d6aaeea19c72cc0a109d7468b829ad57e6c48039d2")
     version("1.2.1", sha256="2750bb2b636ef435d8beac51dde0b13d06199017a1d9b96cba899863d1e81024")
     version("1.2.0", sha256="17c527d5d5505a5a7c5c14348d87f077d643cf1f186321530cde68e530bba59f")
     version("1.1.13", sha256="b905ed610085f568aa61574e0e09260c02bff9eae12ff672af39e9f399357ac4")
     version("1.1.12", sha256="5c66e2357fe37b552462a88b7d31bfa2ed8e84172208becd666933c776252567")
+
+    depends_on("c", type="build")  # generated
 
     depends_on("python@3.8:3", when="@1.6.0:", type=("build", "run"))
     depends_on("python@3.7:3", when="@1.2.0:", type=("build", "run"))
@@ -69,7 +73,7 @@ class PyPoetry(PythonPackage):
     depends_on("py-virtualenv@20.4.3:20.4.4,20.4.7:", when="@1.2", type=("build", "run"))
     depends_on("py-virtualenv@20.0.26:20", when="@:1.1", type=("build", "run"))
     depends_on("py-xattr@0.10", when="platform=darwin @1.6.1", type=("build", "run"))
-    depends_on("py-xattr@0.9.7:0.9", when="platform=darwin @1.2:")
+    depends_on("py-xattr@0.9.7:0.9", when="platform=darwin @1.2")
     depends_on("py-urllib3@1.26.0:1", when="@1.2")
     depends_on("py-dulwich@0.21.2:0.21", when="@1.6.1", type=("build", "run"))
     depends_on("py-dulwich@0.20.46:0.20", when="@1.2.1")

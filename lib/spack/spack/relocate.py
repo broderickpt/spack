@@ -1,4 +1,4 @@
-# Copyright 2013-2023 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
@@ -6,28 +6,25 @@ import collections
 import itertools
 import os
 import re
+import sys
 from collections import OrderedDict
+from typing import List, Optional
 
 import macholib.mach_o
 import macholib.MachO
 
-import llnl.util.filesystem as fs
 import llnl.util.lang
 import llnl.util.tty as tty
 from llnl.util.lang import memoized
-from llnl.util.symlink import symlink
+from llnl.util.symlink import readlink, symlink
 
-import spack.paths
-import spack.platforms
-import spack.repo
-import spack.spec
+import spack.error
 import spack.store
 import spack.util.elf as elf
 import spack.util.executable as executable
+import spack.util.filesystem as ssys
 
 from .relocate_text import BinaryFilePrefixReplacer, TextFilePrefixReplacer
-
-is_macos = str(spack.platforms.real_host()) == "darwin"
 
 
 class InstallRootStringError(spack.error.SpackError):
@@ -47,17 +44,15 @@ class InstallRootStringError(spack.error.SpackError):
 
 
 @memoized
-def _patchelf():
+def _patchelf() -> Optional[executable.Executable]:
     """Return the full path to the patchelf binary, if available, else None."""
     import spack.bootstrap
 
-    if is_macos:
+    if sys.platform == "darwin":
         return None
 
     with spack.bootstrap.ensure_bootstrap_configuration():
-        patchelf = spack.bootstrap.ensure_patchelf_in_path_or_raise()
-
-    return patchelf.path
+        return spack.bootstrap.ensure_patchelf_in_path_or_raise()
 
 
 def _elf_rpaths_for(path):
@@ -340,31 +335,34 @@ def macholib_get_paths(cur_path):
     return (rpaths, deps, ident)
 
 
-def _set_elf_rpaths(target, rpaths):
-    """Replace the original RPATH of the target with the paths passed
-    as arguments.
+def _set_elf_rpaths_and_interpreter(
+    target: str, rpaths: List[str], interpreter: Optional[str] = None
+) -> Optional[str]:
+    """Replace the original RPATH of the target with the paths passed as arguments.
 
     Args:
         target: target executable. Must be an ELF object.
         rpaths: paths to be set in the RPATH
+        interpreter: optionally set the interpreter
 
     Returns:
-        A string concatenating the stdout and stderr of the call
-        to ``patchelf`` if it was invoked
+        A string concatenating the stdout and stderr of the call to ``patchelf`` if it was invoked
     """
     # Join the paths using ':' as a separator
     rpaths_str = ":".join(rpaths)
 
-    patchelf, output = executable.Executable(_patchelf()), None
     try:
+        # TODO: error handling is not great here?
         # TODO: revisit the use of --force-rpath as it might be conditional
         # TODO: if we want to support setting RUNPATH from binary packages
-        patchelf_args = ["--force-rpath", "--set-rpath", rpaths_str, target]
-        output = patchelf(*patchelf_args, output=str, error=str)
+        args = ["--force-rpath", "--set-rpath", rpaths_str]
+        if interpreter:
+            args.extend(["--set-interpreter", interpreter])
+        args.append(target)
+        return _patchelf()(*args, output=str, error=str)
     except executable.ProcessError as e:
-        msg = "patchelf --force-rpath --set-rpath {0} failed with error {1}"
-        tty.warn(msg.format(target, e))
-    return output
+        tty.warn(str(e))
+        return None
 
 
 def needs_binary_relocation(m_type, m_subtype):
@@ -417,7 +415,7 @@ def relocate_macho_binaries(
             # normalized paths
             rel_to_orig = macho_make_paths_normal(orig_path_name, rpaths, deps, idpath)
             # replace the relativized paths with normalized paths
-            if is_macos:
+            if sys.platform == "darwin":
                 modify_macho_object(path_name, rpaths, deps, idpath, rel_to_orig)
             else:
                 modify_object_macholib(path_name, rel_to_orig)
@@ -428,7 +426,7 @@ def relocate_macho_binaries(
                 rpaths, deps, idpath, old_layout_root, prefix_to_prefix
             )
             # replace the old paths with new paths
-            if is_macos:
+            if sys.platform == "darwin":
                 modify_macho_object(path_name, rpaths, deps, idpath, paths_to_paths)
             else:
                 modify_object_macholib(path_name, paths_to_paths)
@@ -439,7 +437,7 @@ def relocate_macho_binaries(
                 path_name, new_layout_root, rpaths, deps, idpath
             )
             # replace the new paths with relativized paths in the new prefix
-            if is_macos:
+            if sys.platform == "darwin":
                 modify_macho_object(path_name, rpaths, deps, idpath, paths_to_paths)
             else:
                 modify_object_macholib(path_name, paths_to_paths)
@@ -451,7 +449,7 @@ def relocate_macho_binaries(
                 rpaths, deps, idpath, old_layout_root, prefix_to_prefix
             )
             # replace the old paths with new paths
-            if is_macos:
+            if sys.platform == "darwin":
                 modify_macho_object(path_name, rpaths, deps, idpath, paths_to_paths)
             else:
                 modify_object_macholib(path_name, paths_to_paths)
@@ -501,10 +499,12 @@ def new_relocate_elf_binaries(binaries, prefix_to_prefix):
 
     for path in binaries:
         try:
-            elf.replace_rpath_in_place_or_raise(path, prefix_to_prefix)
-        except elf.ElfDynamicSectionUpdateFailed as e:
-            # Fall back to the old `patchelf --set-rpath` method.
-            _set_elf_rpaths(path, e.new.decode("utf-8").split(":"))
+            elf.substitute_rpath_and_pt_interp_in_place_or_raise(path, prefix_to_prefix)
+        except elf.ElfCStringUpdatesFailed as e:
+            # Fall back to `patchelf --set-rpath ... --set-interpreter ...`
+            rpaths = e.rpath.new_value.decode("utf-8").split(":") if e.rpath else []
+            interpreter = e.pt_interp.new_value.decode("utf-8") if e.pt_interp else None
+            _set_elf_rpaths_and_interpreter(path, rpaths=rpaths, interpreter=interpreter)
 
 
 def relocate_elf_binaries(
@@ -546,10 +546,10 @@ def relocate_elf_binaries(
             new_rpaths = _make_relative(new_binary, new_root, new_norm_rpaths)
             # check to see if relative rpaths are changed before rewriting
             if sorted(new_rpaths) != sorted(orig_rpaths):
-                _set_elf_rpaths(new_binary, new_rpaths)
+                _set_elf_rpaths_and_interpreter(new_binary, new_rpaths)
         else:
             new_rpaths = _transform_rpaths(orig_rpaths, orig_root, new_prefixes)
-            _set_elf_rpaths(new_binary, new_rpaths)
+            _set_elf_rpaths_and_interpreter(new_binary, new_rpaths)
 
 
 def make_link_relative(new_links, orig_links):
@@ -561,7 +561,7 @@ def make_link_relative(new_links, orig_links):
         orig_links (list): original links
     """
     for new_link, orig_link in zip(new_links, orig_links):
-        target = os.readlink(orig_link)
+        target = readlink(orig_link)
         relative_target = os.path.relpath(target, os.path.dirname(orig_link))
         os.unlink(new_link)
         symlink(relative_target, new_link)
@@ -571,7 +571,7 @@ def make_macho_binaries_relative(cur_path_names, orig_path_names, old_layout_roo
     """
     Replace old RPATHs with paths relative to old_dir in binary files
     """
-    if not is_macos:
+    if not sys.platform == "darwin":
         return
 
     for cur_path, orig_path in zip(cur_path_names, orig_path_names):
@@ -596,7 +596,7 @@ def make_elf_binaries_relative(new_binaries, orig_binaries, orig_layout_root):
         orig_rpaths = _elf_rpaths_for(new_binary)
         if orig_rpaths:
             new_rpaths = _make_relative(orig_binary, orig_layout_root, orig_rpaths)
-            _set_elf_rpaths(new_binary, new_rpaths)
+            _set_elf_rpaths_and_interpreter(new_binary, new_rpaths)
 
 
 def warn_if_link_cant_be_relocated(link, target):
@@ -609,7 +609,7 @@ def relocate_links(links, prefix_to_prefix):
     """Relocate links to a new install prefix."""
     regex = re.compile("|".join(re.escape(p) for p in prefix_to_prefix.keys()))
     for link in links:
-        old_target = os.readlink(link)
+        old_target = readlink(link)
         match = regex.match(old_target)
 
         # No match.
@@ -659,7 +659,7 @@ def is_binary(filename):
     Returns:
         True or False
     """
-    m_type, _ = fs.mime_type(filename)
+    m_type, _ = ssys.mime_type(filename)
 
     msg = "[{0}] -> ".format(filename)
     if m_type == "application":
@@ -687,7 +687,7 @@ def fixup_macos_rpath(root, filename):
         True if fixups were applied, else False
     """
     abspath = os.path.join(root, filename)
-    if fs.mime_type(abspath) != ("application", "x-mach-binary"):
+    if ssys.mime_type(abspath) != ("application", "x-mach-binary"):
         return False
 
     # Get Mach-O header commands

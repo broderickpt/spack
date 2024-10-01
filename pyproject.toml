@@ -154,11 +154,13 @@ ignore_missing_imports = true
       'boto3',
       'botocore',
       'distro',
+      'importlib.metadata',
       'jinja2',
       'jsonschema',
       'macholib',
       'markupsafe',
       'numpy',
+      'pkg_resources',
       'pyristent',
       'pytest',
       'ruamel.yaml',
@@ -171,7 +173,7 @@ ignore_missing_imports = true
 useLibraryCodeForTypes = true
 reportMissingImports = true
 reportWildcardImportFromLibrary = false
-include = ['lib/spack']
+include = ['lib/spack', 'var/spack/repos']
 ignore = ['lib/spack/external']
 extraPaths = ['lib/spack', 'lib/spack/external']
 
@@ -209,6 +211,14 @@ exclude_lines = [
     'if __name__ == .__main__.:',
 ]
 ignore_errors = true
+
+[tool.coverage.paths]
+source = [
+    ".",
+    "/Users/runner/work/spack/spack",
+    "/System/Volumes/Data/home/runner/work/spack/spack",
+    "D:\\a\\spack\\spack",
+]
 
 [tool.coverage.html]
 directory = "htmlcov"

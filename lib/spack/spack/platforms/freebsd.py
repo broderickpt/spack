@@ -1,4 +1,4 @@
-# Copyright 2013-2023 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
@@ -6,7 +6,6 @@ import platform
 
 import archspec.cpu
 
-import spack.target
 from spack.operating_systems.freebsd import FreeBSDOs
 
 from ._platform import Platform
@@ -18,8 +17,7 @@ class FreeBSD(Platform):
     def __init__(self):
         super().__init__("freebsd")
 
-        for name in archspec.cpu.TARGETS:
-            self.add_target(name, spack.target.Target(name))
+        self._add_archspec_targets()
 
         # Get specific default
         self.default = archspec.cpu.host().name

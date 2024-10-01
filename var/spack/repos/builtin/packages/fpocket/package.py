@@ -1,4 +1,4 @@
-# Copyright 2013-2023 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
@@ -15,7 +15,13 @@ class Fpocket(MakefilePackage):
     homepage = "https://github.com/Discngine/fpocket"
     url = "https://github.com/Discngine/fpocket/archive/refs/tags/4.1.tar.gz"
 
-    version("4.1", "1a2af2d3f2df42de67301996db3b93c7eaff0375f866443c0468dcf4b1750688")
+    license("MIT")
+
+    version("4.2", sha256="8aea4ccdf4243606110c8f6978b13dd90f9cae092660eca4c6970206011de4aa")
+    version("4.1", sha256="1a2af2d3f2df42de67301996db3b93c7eaff0375f866443c0468dcf4b1750688")
+
+    depends_on("c", type="build")  # generated
+    depends_on("cxx", type="build")  # generated
 
     depends_on("netcdf-c")
     depends_on("netcdf-cxx")

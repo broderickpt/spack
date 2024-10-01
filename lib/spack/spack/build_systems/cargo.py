@@ -1,9 +1,7 @@
-# Copyright 2013-2023 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
-
-import inspect
 
 import llnl.util.filesystem as fs
 
@@ -16,7 +14,7 @@ from ._checks import BaseBuilder, execute_install_time_tests
 
 
 class CargoPackage(spack.package_base.PackageBase):
-    """Specialized class for packages built using a Makefiles."""
+    """Specialized class for packages built using cargo."""
 
     #: This attribute is used in UI queries that need to know the build
     #: system base class
@@ -72,9 +70,7 @@ class CargoBuilder(BaseBuilder):
     def build(self, pkg, spec, prefix):
         """Runs ``cargo install`` in the source directory"""
         with fs.working_dir(self.build_directory):
-            inspect.getmodule(pkg).cargo(
-                "install", "--root", "out", "--path", ".", *self.build_args
-            )
+            pkg.module.cargo("install", "--root", "out", "--path", ".", *self.build_args)
 
     def install(self, pkg, spec, prefix):
         """Copy build files into package prefix."""
@@ -86,4 +82,4 @@ class CargoBuilder(BaseBuilder):
     def check(self):
         """Run "cargo test"."""
         with fs.working_dir(self.build_directory):
-            inspect.getmodule(self.pkg).cargo("test", *self.check_args)
+            self.pkg.module.cargo("test", *self.check_args)
